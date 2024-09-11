@@ -3,8 +3,8 @@ pragma solidity ^0.8.9;
 
 contract Assessment {
     address payable public owner;
-    uint256 public balance; // Corrected spelling
-    uint256 public transactionCount; // Corrected spelling
+    uint256 public balance; /
+    uint256 public transactionCount; 
 
     event Deposit(uint256 amount);
     event Withdraw(uint256 amount);
