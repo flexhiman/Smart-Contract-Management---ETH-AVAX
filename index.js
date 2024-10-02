@@ -1,20 +1,20 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import atm_abi from "../artifacts/contracts/Assessment.sol/Assessment.json";
+import SharedOfficeBookingSystemAbi from "../artifacts/contracts/SharedOfficeBookingSystem.sol/SharedOfficeBookingSystem.json";
 
 export default function HomePage() {
   const [ethWallet, setEthWallet] = useState(undefined);
   const [account, setAccount] = useState(undefined);
-  const [atm, setATM] = useState(undefined);
-  const [balance, setBalance] = useState(undefined);
-  const [transactionCount, setTransactionCount] = useState(undefined);
-  const [loading, setLoading] = useState(false); 
-  const [amount, setAmount] = useState(1); 
-  const [transactions, setTransactions] = useState([]); 
-  const [darkMode, setDarkMode] = useState(false); 
+  const [OfficeBookingSystem, setOfficeBookingSystem] = useState(undefined);
+  const [officeAvailability, setOfficeAvailability] = useState({});
+  const [message, setMessage] = useState("");
+  const [officeName, setOfficeName] = useState("");
+  const [officeId, setOfficeId] = useState("");
+  const [bookingDuration, setBookingDuration] = useState(1); // Default booking duration
+  const [ownerEarnings, setOwnerEarnings] = useState(0);
 
-  const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-  const atmABI = atm_abi.abi;
+  const contractAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"; // Update with your contract address
+  const OfficeBookingSystemABI = SharedOfficeBookingSystemAbi.abi;
 
   const getWallet = async () => {
     if (window.ethereum) {
@@ -22,17 +22,16 @@ export default function HomePage() {
     }
 
     if (ethWallet) {
-      const account = await ethWallet.request({ method: "eth_accounts" });
-      handleAccount(account);
+      const accounts = await ethWallet.request({ method: "eth_accounts" });
+      handleAccount(accounts);
     }
   };
 
-  const handleAccount = (account) => {
-    if (account) {
-      console.log("Account connected: ", account);
-      setAccount(account);
+  const handleAccount = (accounts) => {
+    if (accounts.length > 0) {
+      setAccount(accounts[0]);
     } else {
-      console.log("No account found");
+      setAccount(undefined);
     }
   };
 
@@ -42,190 +41,228 @@ export default function HomePage() {
       return;
     }
 
-    const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
-    handleAccount(accounts);
-    getATMContract();
+    try {
+      const accounts = await ethWallet.request({ method: "eth_requestAccounts" });
+      handleAccount(accounts);
+      getOfficeBookingSystemContract();
+    } catch (error) {
+      setMessage("Error connecting account: " + (error.message || error));
+    }
   };
 
-  const getATMContract = () => {
+  const getOfficeBookingSystemContract = () => {
     const provider = new ethers.providers.Web3Provider(ethWallet);
     const signer = provider.getSigner();
-    const atmContract = new ethers.Contract(contractAddress, atmABI, signer);
-    setATM(atmContract);
+    const OfficeBookingSystemContract = new ethers.Contract(contractAddress, OfficeBookingSystemABI, signer);
+    setOfficeBookingSystem(OfficeBookingSystemContract);
   };
 
-  const getBalance = async () => {
-    if (atm) {
-      setBalance((await atm.getBalance()).toNumber());
-    }
-  };
-
-  const getTransactionCount = async () => {
-    if (atm) {
-      setTransactionCount((await atm.numberOfTransactions()).toNumber());
-    }
-  };
-
-  const deposit = async () => {
-    if (atm) {
+  const addOffice = async () => {
+    setMessage("");
+    if (OfficeBookingSystem) {
       try {
-        setLoading(true); 
-        let tx = await atm.deposit(amount); 
+        let tx = await OfficeBookingSystem.addOffice(officeName, ethers.utils.parseEther("10")); // Default price per hour, change if needed
         await tx.wait();
-        setTransactions([...transactions, { type: "Deposit", amount, timestamp: new Date().toLocaleString() }]); // Update transaction history
-        getBalance();
-        getTransactionCount();
-        alert("Deposit successful!");
+        setMessage("Office added successfully!");
       } catch (error) {
-        alert("Transaction failed.");
-      } finally {
-        setLoading(false); 
+        setMessage("Error adding office: " + (error.message || error));
       }
     }
   };
 
-  const withdraw = async () => {
-    if (atm) {
+  const bookOffice = async () => {
+    setMessage("");
+    if (OfficeBookingSystem) {
       try {
-        setLoading(true); 
-        let tx = await atm.withdraw(amount); 
+        const officeDetails = await OfficeBookingSystem.checkOfficeAvailability(officeId);
+        const pricePerHour = officeDetails[2]; // Extract pricePerHour from response
+        let totalCost = pricePerHour.mul(bookingDuration); // Calculate total cost based on duration
+        let tx = await OfficeBookingSystem.bookOffice(officeId, bookingDuration, { value: totalCost });
         await tx.wait();
-        setTransactions([...transactions, { type: "Withdraw", amount, timestamp: new Date().toLocaleString() }]); 
-        getBalance();
-        getTransactionCount();
-        alert("Withdrawal successful!");
+        checkOfficeAvailability(officeId);
+        setMessage("Office booked successfully!");
+
+        // Refresh earnings after booking
+        await getOwnerEarnings();
       } catch (error) {
-        alert("Transaction failed.");
-      } finally {
-        setLoading(false); /
+        setMessage("Unable to book office: " + (error.message || error));
       }
     }
   };
 
-  const toggleDarkMode = () => setDarkMode(!darkMode);
+  const returnOffice = async () => {
+    setMessage("");
+    if (OfficeBookingSystem) {
+      try {
+        let tx = await OfficeBookingSystem.returnOffice(officeId);
+        await tx.wait();
+        checkOfficeAvailability(officeId);
+        setMessage("Office returned successfully!");
+
+        // Refresh earnings after returning
+        await getOwnerEarnings();
+      } catch (error) {
+        setMessage("Unable to return office: " + (error.message || error));
+      }
+    }
+  };
+
+  const withdrawEarnings = async () => {
+    setMessage("");
+    if (OfficeBookingSystem) {
+      try {
+        let tx = await OfficeBookingSystem.withdrawEarnings();
+        await tx.wait();
+        setMessage("Earnings withdrawn successfully!");
+      } catch (error) {
+        setMessage("Unable to withdraw earnings: " + (error.message || error));
+      }
+    }
+  };
+
+  const checkOfficeAvailability = async (officeId) => {
+    try {
+      if (OfficeBookingSystem) {
+        const [officeName, isBooked, pricePerHour, owner] = await OfficeBookingSystem.checkOfficeAvailability(officeId);
+        setOfficeAvailability((prev) => ({ ...prev, [officeId]: { officeName, isBooked, pricePerHour, owner } }));
+      }
+    } catch (error) {
+      setMessage("Error fetching office availability: " + (error.message || error));
+    }
+  };
+
+  const getOwnerEarnings = async () => {
+    try {
+      if (OfficeBookingSystem) {
+        const earnings = await OfficeBookingSystem.earnings(account);
+        setOwnerEarnings(ethers.utils.formatEther(earnings));
+      }
+    } catch (error) {
+      setMessage("Error fetching earnings: " + (error.message || error));
+    }
+  };
 
   const initUser = () => {
     if (!ethWallet) {
-      return <p>Please install MetaMask in order to use this ATM.</p>;
+      return <p>Please install MetaMask to use this office booking system.</p>;
     }
 
     if (!account) {
-      return <button onClick={connectAccount}>Please connect your MetaMask wallet</button>;
-    }
-
-    if (balance === undefined) {
-      getBalance();
-    }
-
-    if (transactionCount === undefined) {
-      getTransactionCount();
+      return <button onClick={connectAccount}>Connect MetaMask Wallet</button>;
     }
 
     return (
       <div>
         <p>Your Account: {account}</p>
-        <p>Your Balance: {balance} ETH</p>
-        <p>Number of Transactions: {transactionCount}</p>
-        
-        <input 
-          type="number" 
-          value={amount} 
-          onChange={(e) => setAmount(e.target.value)} 
-          placeholder="Enter amount" 
-          min="1"
-        />
-        
-        {loading ? <p>Transaction in progress...</p> : null}
+        <p>Rent office  for 10 [ETH/hrs] </p>
+        <div className="office-actions">
+          <input
+            type="text"
+            placeholder="Office Name"
+            value={officeName}
+            onChange={(e) => setOfficeName(e.target.value)}
+          />
+          <button onClick={addOffice}>Add Office</button>
 
-        <button onClick={deposit} disabled={loading}>Deposit {amount} ETH</button>
-        <button onClick={withdraw} disabled={loading}>Withdraw {amount} ETH</button>
+          <input
+            type="text"
+            placeholder="Office ID"
+            value={officeId}
+            onChange={(e) => setOfficeId(e.target.value)}
+          />
+          <input
+            type="number"
+            placeholder="Booking Duration (hours)"
+            value={bookingDuration}
+            onChange={(e) => setBookingDuration(e.target.value)}
+          />
+          <button onClick={bookOffice}>Book Office</button>
+          <button onClick={returnOffice}>Return Office</button>
 
-        <h3>Transaction History</h3>
-        <ul>
-          {transactions.map((tx, index) => (
-            <li key={index}>
-              {tx.type} of {tx.amount} ETH on {tx.timestamp}
-            </li>
-          ))}
-        </ul>
+          <div className="office-info">
+            {Object.keys(officeAvailability).map((officeId) => (
+              <div key={officeId}>
+                <p>Office ID: {officeId}</p>
+                <p>Office Name: {officeAvailability[officeId].officeName}</p>
+                <p>Price Per Hour: {ethers.utils.formatEther(officeAvailability[officeId].pricePerHour)} ETH</p>
+                <p>Status: {officeAvailability[officeId].isBooked ? "Booked" : "Available"}</p>
+                <p>Owner: {officeAvailability[officeId].owner}</p>
+                <button onClick={() => checkOfficeAvailability(officeId)}>Check Office Availability</button>
+              </div>
+            ))}
+          </div>
+
+          <p>Your Earnings: {ownerEarnings} ETH</p>
+          <button onClick={withdrawEarnings}>Withdraw Earnings</button>
+        </div>
+        {message && <p><strong>{message}</strong></p>}
       </div>
     );
   };
 
   useEffect(() => {
     getWallet();
-  }, []);
+    if (account) {
+      getOwnerEarnings();
+    }
+  }, [account]);
 
   return (
-    <main className={darkMode ? "dark" : "light"}>
+    <main className="container">
       <header>
-        <h1>Welcome to the Metacrafters ATM!</h1>
-        <button onClick={toggleDarkMode}>
-          Toggle {darkMode ? "Light" : "Dark"} Mode
-        </button>
+        <h1>Welcome to Shared Office Booking System</h1>
       </header>
-
       {initUser()}
-
       <style jsx>{`
-        main {
+         .container {
           text-align: center;
-          background-image: url('https://www.imageshine.in/uploads/gallery/Free-vector-watercolor-background-Wallpaper.jpg');
+          background-color: white;
+          color: white;
+          font-family: "Times New Roman", serif;
+          border: 10px solid black;
+          border-radius: 20px;
+          background-image: url("https://i.pinimg.com/originals/d0/08/f5/d008f53d0f2227feb7bdade0aa1d054e.jpg");
           background-size: cover;
           background-position: center;
-          min-height: 100vh;
+          background-repeat: no-repeat;
+          height: 850px;
+          width: 1500px;
+          
+          font-weight: 1000;
+          padding: 20px;
+        }
+
+        header {
+          padding: 10px;
+        }
+
+        h1 {
+          font-family: "Arial", serif;
+          font-size: 60px;
+          margin-bottom: 20px;
+        }
+
+        .task-info {
           display: flex;
           flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          color: ${darkMode ? 'white' : 'black'};
-        }
-
-        .dark {
-          background-color: #333;
-          color: white;
-        }
-
-        .light {
-          background-color: white;
-          color: black;
-        }
-
-        input {
-          margin-bottom: 10px;
-          padding: 5px;
-          border-radius: 5px;
-          border: 1px solid #ccc;
+          gap: 20px;
         }
 
         button {
-          margin: 10px;
-          padding: 10px 20px;
-          font-size: 16px;
-          cursor: pointer;
+          background-color: #4caf50;
+          color: black;
           border: none;
-          border-radius: 5px;
+          padding: 15px 25px;
+          font-size: 22px;
+          cursor: pointer;
+          border-radius: 8px;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
-        button:disabled {
-          background-color: #ccc;
+        button:hover {
+          background-color: #388e3c;
         }
-
-        ul {
-          list-style-type: none;
-          padding: 0;
-        }
-
-        li {
-          background: ${darkMode ? '#444' : '#f9f9f9'};
-          margin: 5px 0;
-          padding: 10px;
-          border-radius: 5px;
-          width: 100%;
-          max-width: 300px;
-        }
-      `}
-      </style>
+      `}</style>
     </main>
   );
 }
