@@ -1,20 +1,28 @@
-const hre = require("hardhat");
+const { ethers } = require("hardhat");
 
 async function main() {
-  const initBalance = 1;
-  const Assessment = await hre.ethers.getContractFactory("Assessment");
-  const assessment = await Assessment.deploy(initBalance);
-  await assessment.deployed();
+  try {
+    // Fetch the contract factory for SharedOfficeBookingSystem
+    const SharedOfficeBookingSystemFactory = await ethers.getContractFactory("SharedOfficeBookingSystem");
 
-  console.log(`A contract with balance of ${initBalance} eth deployed to ${assessment.address}`);
+    // Deploy the contract
+    const sharedOfficeBookingSystem = await SharedOfficeBookingSystemFactory.deploy();
+    
+    // Wait until the contract is deployed
+    await sharedOfficeBookingSystem.deployed();
 
-  const transactionCount = await assessment.numberOfTransactions();
-  console.log(`Inital number of transaction: ${transactionCount}`);
+    // Log the address of the deployed contract
+    console.log(SharedOfficeBookingSystem deployed to: ${sharedOfficeBookingSystem.address});
+  } catch (error) {
+    console.error("Error during deployment:", error);
+    process.exit(1);
+  }
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// Run the deployment script
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error("Deployment failed:", error);
+    process.exit(1);
+  });
